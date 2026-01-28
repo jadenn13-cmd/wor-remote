@@ -1,0 +1,1084 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#111b21">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>WOR Remote</title>
+  <link rel="manifest" href="manifest.json">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #111b21;
+      color: #e9edef;
+      min-height: 100vh;
+      padding-bottom: 70px;
+    }
+    
+    /* Header */
+    .header {
+      background: #202c33;
+      padding: 16px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      border-bottom: 1px solid #2a3942;
+    }
+    
+    .header-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    
+    .header h1 {
+      font-size: 18px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    .status-badge {
+      font-size: 12px;
+      padding: 4px 10px;
+      border-radius: 12px;
+      background: #2a3942;
+    }
+    
+    .status-badge.monitoring { background: #00a884; color: #111b21; }
+    .status-badge.paused { background: #f7c32e; color: #111b21; }
+    .status-badge.processing { background: #53bdeb; color: #111b21; }
+    .status-badge.awaiting { background: #ff9500; color: #111b21; }
+    .status-badge.stopped { background: #667781; }
+    .status-badge.disconnected { background: #ea4b35; }
+    
+    .session-id-display {
+      font-size: 11px;
+      color: #8696a0;
+      margin-top: 4px;
+    }
+    
+    /* Controls */
+    .controls {
+      display: flex;
+      gap: 8px;
+      padding: 12px 16px;
+      background: #1f2c34;
+    }
+    
+    .btn {
+      flex: 1;
+      padding: 12px;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+    
+    .btn-primary { background: #00a884; color: #111b21; }
+    .btn-secondary { background: #2a3942; color: #e9edef; }
+    .btn-danger { background: #ea4b35; color: #fff; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    
+    /* Tabs */
+    .tabs {
+      display: flex;
+      background: #202c33;
+      border-bottom: 1px solid #2a3942;
+    }
+    
+    .tab {
+      flex: 1;
+      padding: 12px;
+      border: none;
+      background: none;
+      color: #8696a0;
+      font-size: 14px;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+    }
+    
+    .tab.active {
+      color: #00a884;
+      border-bottom-color: #00a884;
+    }
+    
+    /* Content */
+    .tab-content {
+      display: none;
+      padding: 16px;
+    }
+    
+    .tab-content.active { display: block; }
+    
+    /* Queue Items */
+    .queue-item {
+      background: #202c33;
+      border-radius: 12px;
+      padding: 14px;
+      margin-bottom: 10px;
+    }
+    
+    .queue-item-header {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+    
+    .queue-item-title {
+      font-weight: 600;
+      font-size: 14px;
+    }
+    
+    .queue-item-time {
+      font-size: 11px;
+      color: #8696a0;
+    }
+    
+    .queue-item-preview {
+      font-size: 13px;
+      color: #8696a0;
+      line-height: 1.4;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    
+    .queue-item-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+    }
+    
+    .queue-item-actions .btn {
+      flex: 1;
+      padding: 10px;
+      font-size: 13px;
+    }
+    
+    /* Empty State */
+    .empty-state {
+      text-align: center;
+      padding: 40px 20px;
+      color: #8696a0;
+    }
+    
+    .empty-state-icon {
+      font-size: 48px;
+      margin-bottom: 16px;
+    }
+    
+    /* Approval Card */
+    .approval-section {
+      padding: 16px;
+      background: #1f2c34;
+      border-bottom: 1px solid #2a3942;
+    }
+    
+    .approval-section.hidden { display: none; }
+    
+    .approval-card {
+      background: #202c33;
+      border-radius: 12px;
+      padding: 16px;
+      border-left: 4px solid #00a884;
+    }
+    
+    .approval-header {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+    
+    .approval-type {
+      font-weight: 600;
+      font-size: 14px;
+    }
+    
+    .approval-time {
+      font-size: 11px;
+      color: #8696a0;
+    }
+    
+    .approval-title {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+    
+    .approval-subtitle {
+      font-size: 13px;
+      color: #8696a0;
+      margin-bottom: 12px;
+    }
+    
+    .approval-textarea {
+      width: 100%;
+      min-height: 120px;
+      background: #111b21;
+      border: 1px solid #2a3942;
+      border-radius: 8px;
+      padding: 12px;
+      color: #e9edef;
+      font-size: 14px;
+      resize: vertical;
+      margin-bottom: 12px;
+    }
+    
+    .approval-input {
+      width: 100%;
+      background: #111b21;
+      border: 1px solid #2a3942;
+      border-radius: 8px;
+      padding: 12px;
+      color: #e9edef;
+      font-size: 14px;
+      margin-bottom: 12px;
+    }
+    
+    .approval-actions {
+      display: flex;
+      gap: 8px;
+    }
+    
+    /* Label chips */
+    .label-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    
+    .label-chip {
+      background: #2a3942;
+      padding: 8px 14px;
+      border-radius: 20px;
+      font-size: 13px;
+      cursor: pointer;
+      border: 2px solid transparent;
+    }
+    
+    .label-chip.selected {
+      border-color: #00a884;
+      background: #00a88420;
+    }
+    
+    .price-badge {
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: #00a884;
+      color: #111b21;
+    }
+    
+    .price-badge.remove { background: #ea4b35; color: #fff; }
+    .price-badge.keep { background: #00a884; color: #111b21; }
+    
+    /* Connection Screen */
+    .connection-screen {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 20px;
+    }
+    
+    .connection-screen.hidden { display: none; }
+    
+    .connection-logo {
+      font-size: 64px;
+      margin-bottom: 20px;
+    }
+    
+    .connection-title {
+      font-size: 24px;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+    
+    .connection-subtitle {
+      color: #8696a0;
+      margin-bottom: 24px;
+      text-align: center;
+    }
+    
+    .connection-input {
+      width: 100%;
+      max-width: 280px;
+      padding: 16px;
+      font-size: 24px;
+      text-align: center;
+      background: #202c33;
+      border: 2px solid #2a3942;
+      border-radius: 12px;
+      color: #e9edef;
+      letter-spacing: 8px;
+      margin-bottom: 16px;
+      text-transform: uppercase;
+    }
+    
+    .connection-input:focus {
+      outline: none;
+      border-color: #00a884;
+    }
+    
+    .connect-btn {
+      width: 100%;
+      max-width: 280px;
+      padding: 16px;
+      font-size: 16px;
+    }
+    
+    /* Main App */
+    .main-app { display: none; }
+    .main-app.active { display: block; }
+    
+    /* Toast */
+    .toast {
+      position: fixed;
+      bottom: 80px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #202c33;
+      color: #e9edef;
+      padding: 12px 24px;
+      border-radius: 8px;
+      font-size: 14px;
+      z-index: 1000;
+      animation: fadeIn 0.3s ease;
+    }
+    
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translate(-50%, 10px); }
+      to { opacity: 1; transform: translate(-50%, 0); }
+    }
+    
+    /* Settings Modal */
+    .settings-modal {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0,0,0,0.8);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 200;
+    }
+    
+    .settings-modal.hidden { display: none; }
+    
+    .settings-content {
+      background: #202c33;
+      border-radius: 16px;
+      width: 90%;
+      max-width: 340px;
+      padding: 20px;
+    }
+    
+    .settings-title {
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 20px;
+      text-align: center;
+    }
+    
+    .settings-group {
+      margin-bottom: 16px;
+    }
+    
+    .settings-label {
+      font-size: 13px;
+      color: #8696a0;
+      margin-bottom: 8px;
+    }
+    
+    .settings-value {
+      background: #111b21;
+      padding: 12px;
+      border-radius: 8px;
+      font-family: monospace;
+      font-size: 16px;
+      letter-spacing: 2px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    
+    .settings-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-top: 20px;
+    }
+    
+    /* Notification permission */
+    .notification-banner {
+      background: #2a3942;
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    
+    .notification-banner.hidden { display: none; }
+    
+    .notification-banner-text {
+      font-size: 13px;
+      color: #8696a0;
+    }
+    
+    .notification-banner .btn {
+      flex: 0;
+      white-space: nowrap;
+    }
+  </style>
+</head>
+<body>
+  <!-- Connection Screen -->
+  <div class="connection-screen" id="connection-screen">
+    <div class="connection-logo">📱</div>
+    <div class="connection-title">WOR Remote</div>
+    <div class="connection-subtitle">Enter the Session ID from your<br>Chrome extension to connect</div>
+    <input type="text" class="connection-input" id="session-input" placeholder="XXXXXX" maxlength="6" autocomplete="off">
+    <button class="btn btn-primary connect-btn" onclick="connect()">Connect</button>
+  </div>
+  
+  <!-- Main App -->
+  <div class="main-app" id="main-app">
+    <!-- Header -->
+    <div class="header">
+      <div class="header-row">
+        <h1>📱 WOR Remote</h1>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span class="status-badge" id="status-badge">Connecting...</span>
+          <button onclick="showSettings()" style="background:none;border:none;font-size:18px;cursor:pointer;">⚙️</button>
+        </div>
+      </div>
+      <div class="session-id-display">Session: <span id="session-display">------</span></div>
+    </div>
+    
+    <!-- Notification Banner -->
+    <div class="notification-banner" id="notification-banner">
+      <span class="notification-banner-text">Enable notifications to get alerts for new offers</span>
+      <button class="btn btn-primary" onclick="requestNotificationPermission()">Enable</button>
+    </div>
+    
+    <!-- Approval Section -->
+    <div class="approval-section hidden" id="approval-section"></div>
+    
+    <!-- Controls -->
+    <div class="controls">
+      <button class="btn btn-primary" id="btn-run" onclick="sendCommand('RUN')">▶ Run</button>
+      <button class="btn btn-secondary" id="btn-pause" onclick="sendCommand('PAUSE')">⏸ Pause</button>
+      <button class="btn btn-danger" id="btn-stop" onclick="sendCommand('STOP')">⏹ Stop</button>
+    </div>
+    
+    <!-- Tabs -->
+    <div class="tabs">
+      <button class="tab active" data-tab="pending" onclick="switchTab('pending')">
+        Pending <span id="pending-badge"></span>
+      </button>
+      <button class="tab" data-tab="completed" onclick="switchTab('completed')">
+        Done <span id="completed-badge"></span>
+      </button>
+    </div>
+    
+    <!-- Pending Tab -->
+    <div class="tab-content active" id="tab-pending">
+      <div id="pending-list">
+        <div class="empty-state">
+          <div class="empty-state-icon">📭</div>
+          <p>No pending offers</p>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Completed Tab -->
+    <div class="tab-content" id="tab-completed">
+      <div id="completed-list">
+        <div class="empty-state">
+          <div class="empty-state-icon">✅</div>
+          <p>No completed offers today</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Settings Modal -->
+  <div class="settings-modal hidden" id="settings-modal">
+    <div class="settings-content">
+      <div class="settings-title">⚙️ Settings</div>
+      <div class="settings-group">
+        <div class="settings-label">Session ID</div>
+        <div class="settings-value">
+          <span id="settings-session-id">------</span>
+          <button class="btn btn-secondary" onclick="copySessionId()" style="padding:6px 12px;font-size:12px;">Copy</button>
+        </div>
+      </div>
+      <div class="settings-group">
+        <div class="settings-label">Notifications</div>
+        <div class="settings-value">
+          <span id="notification-status">Not enabled</span>
+          <button class="btn btn-secondary" onclick="requestNotificationPermission()" style="padding:6px 12px;font-size:12px;">Enable</button>
+        </div>
+      </div>
+      <div class="settings-actions">
+        <button class="btn btn-secondary" onclick="hideSettings()">Close</button>
+        <button class="btn btn-danger" onclick="disconnect()">Disconnect</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+  
+  <script>
+    // Firebase config
+    const firebaseConfig = {
+      apiKey: "AIzaSyBSOUq1_RXB8SpkDdRzSXgksBUudiV4l4g",
+      authDomain: "wor-remote.firebaseapp.com",
+      databaseURL: "https://wor-remote-default-rtdb.europe-west1.firebasedatabase.app",
+      projectId: "wor-remote"
+    };
+    
+    // Initialize Firebase
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+    
+    // State
+    let sessionId = localStorage.getItem('wor_session_id') || '';
+    let currentStatus = 'disconnected';
+    let pendingQueue = [];
+    let completedToday = [];
+    let currentApproval = null;
+    let unsubscribers = [];
+    let lastPendingCount = 0;
+    let notificationsEnabled = false;
+    
+    // DOM elements
+    const connectionScreen = document.getElementById('connection-screen');
+    const mainApp = document.getElementById('main-app');
+    const sessionInput = document.getElementById('session-input');
+    const statusBadge = document.getElementById('status-badge');
+    const sessionDisplay = document.getElementById('session-display');
+    const pendingList = document.getElementById('pending-list');
+    const completedList = document.getElementById('completed-list');
+    const approvalSection = document.getElementById('approval-section');
+    const notificationBanner = document.getElementById('notification-banner');
+    
+    // Check for saved session on load
+    if (sessionId) {
+      sessionInput.value = sessionId;
+      connect();
+    }
+    
+    // Check notification permission
+    checkNotificationPermission();
+    
+    function checkNotificationPermission() {
+      if ('Notification' in window) {
+        if (Notification.permission === 'granted') {
+          notificationsEnabled = true;
+          notificationBanner.classList.add('hidden');
+          document.getElementById('notification-status').textContent = 'Enabled ✓';
+        } else if (Notification.permission === 'denied') {
+          notificationBanner.classList.add('hidden');
+          document.getElementById('notification-status').textContent = 'Blocked';
+        }
+      } else {
+        notificationBanner.classList.add('hidden');
+        document.getElementById('notification-status').textContent = 'Not supported';
+      }
+    }
+    
+    function requestNotificationPermission() {
+      if ('Notification' in window) {
+        Notification.requestPermission().then(permission => {
+          if (permission === 'granted') {
+            notificationsEnabled = true;
+            notificationBanner.classList.add('hidden');
+            document.getElementById('notification-status').textContent = 'Enabled ✓';
+            showToast('Notifications enabled!');
+            
+            // Send test notification
+            new Notification('WOR Remote', {
+              body: 'Notifications are now enabled!',
+              icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">📱</text></svg>'
+            });
+          } else {
+            showToast('Notification permission denied');
+          }
+          checkNotificationPermission();
+        });
+      }
+    }
+    
+    function sendNotification(title, body) {
+      if (notificationsEnabled && 'Notification' in window && Notification.permission === 'granted') {
+        // Vibrate if supported
+        if ('vibrate' in navigator) {
+          navigator.vibrate([200, 100, 200]);
+        }
+        
+        const notification = new Notification(title, {
+          body: body,
+          icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">📱</text></svg>',
+          tag: 'wor-notification',
+          requireInteraction: true
+        });
+        
+        notification.onclick = function() {
+          window.focus();
+          notification.close();
+        };
+      }
+    }
+    
+    // Connect to session
+    function connect() {
+      const input = sessionInput.value.trim().toUpperCase();
+      if (input.length !== 6) {
+        showToast('Please enter a 6-character Session ID');
+        return;
+      }
+      
+      sessionId = input;
+      localStorage.setItem('wor_session_id', sessionId);
+      
+      // Show main app
+      connectionScreen.classList.add('hidden');
+      mainApp.classList.add('active');
+      sessionDisplay.textContent = sessionId;
+      document.getElementById('settings-session-id').textContent = sessionId;
+      
+      // Subscribe to Firebase
+      subscribeToSession();
+    }
+    
+    // Subscribe to session data
+    function subscribeToSession() {
+      // Unsubscribe from any previous subscriptions
+      unsubscribers.forEach(unsub => unsub());
+      unsubscribers = [];
+      
+      const sessionRef = db.ref(`sessions/${sessionId}`);
+      
+      // Listen to status
+      const statusRef = sessionRef.child('status');
+      statusRef.on('value', (snapshot) => {
+        const data = snapshot.val();
+        if (data) {
+          currentStatus = data.status || 'disconnected';
+          updateStatusUI();
+        }
+      });
+      unsubscribers.push(() => statusRef.off());
+      
+      // Listen to pending queue
+      const pendingRef = sessionRef.child('pendingQueue');
+      pendingRef.on('value', (snapshot) => {
+        const oldCount = pendingQueue.length;
+        pendingQueue = snapshot.val() ? Object.values(snapshot.val()) : [];
+        renderPendingQueue();
+        
+        // Send notification for new offers
+        if (pendingQueue.length > oldCount && oldCount > 0) {
+          const newOffer = pendingQueue[pendingQueue.length - 1];
+          sendNotification('New Offer!', newOffer.summary || 'A new offer is pending');
+        } else if (pendingQueue.length > 0 && oldCount === 0) {
+          sendNotification('New Offer!', `${pendingQueue.length} offer(s) pending`);
+        }
+      });
+      unsubscribers.push(() => pendingRef.off());
+      
+      // Listen to completed
+      const completedRef = sessionRef.child('completedToday');
+      completedRef.on('value', (snapshot) => {
+        completedToday = snapshot.val() ? Object.values(snapshot.val()) : [];
+        renderCompletedList();
+      });
+      unsubscribers.push(() => completedRef.off());
+      
+      // Listen to approval requests
+      const approvalRef = sessionRef.child('approvalRequest');
+      approvalRef.on('value', (snapshot) => {
+        currentApproval = snapshot.val();
+        renderApproval();
+        
+        // Notify for approval requests
+        if (currentApproval) {
+          const typeMap = {
+            'confirm_send': 'Confirm Send',
+            'exclusions': 'Set Exclusions',
+            'revision': 'Review Message',
+            'label_selection': 'Select Labels'
+          };
+          sendNotification('Action Required', typeMap[currentApproval.type] || 'Approval needed');
+        }
+      });
+      unsubscribers.push(() => approvalRef.off());
+      
+      // Set connected
+      sessionRef.child('remoteConnected').set(true);
+      sessionRef.child('remoteConnected').onDisconnect().set(false);
+      
+      showToast('Connected to session ' + sessionId);
+    }
+    
+    // Update status UI
+    function updateStatusUI() {
+      const statusMap = {
+        'stopped': { text: '🔴 Stopped', class: 'stopped' },
+        'monitoring': { text: '🟢 Monitoring', class: 'monitoring' },
+        'paused': { text: '🟡 Paused', class: 'paused' },
+        'processing': { text: '🔵 Processing', class: 'processing' },
+        'awaiting_approval': { text: '🟠 Awaiting', class: 'awaiting' },
+        'disconnected': { text: '⚫ Disconnected', class: 'disconnected' }
+      };
+      
+      const status = statusMap[currentStatus] || statusMap.disconnected;
+      statusBadge.textContent = status.text;
+      statusBadge.className = 'status-badge ' + status.class;
+      
+      // Update button states
+      document.getElementById('btn-run').disabled = currentStatus === 'monitoring' || currentStatus === 'processing';
+      document.getElementById('btn-pause').disabled = currentStatus !== 'monitoring';
+      document.getElementById('btn-stop').disabled = currentStatus === 'stopped';
+    }
+    
+    // Render pending queue
+    function renderPendingQueue() {
+      document.getElementById('pending-badge').textContent = pendingQueue.length > 0 ? `(${pendingQueue.length})` : '';
+      
+      if (pendingQueue.length === 0) {
+        pendingList.innerHTML = `
+          <div class="empty-state">
+            <div class="empty-state-icon">📭</div>
+            <p>No pending offers</p>
+          </div>
+        `;
+        return;
+      }
+      
+      pendingList.innerHTML = pendingQueue.map(offer => `
+        <div class="queue-item">
+          <div class="queue-item-header">
+            <span class="queue-item-title">${offer.summary || 'Offer'}</span>
+            <span class="queue-item-time">${formatTime(offer.timestamp)}</span>
+          </div>
+          <div class="queue-item-preview">${(offer.text || '').substring(0, 100)}...</div>
+          <div class="queue-item-actions">
+            <button class="btn btn-secondary" onclick="skipOffer('${offer.id}')">Skip</button>
+            <button class="btn btn-primary" onclick="workOffer('${offer.id}')">Work</button>
+          </div>
+        </div>
+      `).join('');
+    }
+    
+    // Render completed list
+    function renderCompletedList() {
+      document.getElementById('completed-badge').textContent = completedToday.length > 0 ? `(${completedToday.length})` : '';
+      
+      if (completedToday.length === 0) {
+        completedList.innerHTML = `
+          <div class="empty-state">
+            <div class="empty-state-icon">✅</div>
+            <p>No completed offers today</p>
+          </div>
+        `;
+        return;
+      }
+      
+      completedList.innerHTML = completedToday.map(offer => `
+        <div class="queue-item">
+          <div class="queue-item-header">
+            <span class="queue-item-title">${offer.summary || 'Offer'}</span>
+            <span class="queue-item-time">${formatTime(offer.completedAt)}</span>
+          </div>
+          <div class="queue-item-preview">Sent to: ${(offer.labels || []).join(', ') || 'N/A'}</div>
+        </div>
+      `).join('');
+    }
+    
+    // Render approval request
+    function renderApproval() {
+      if (!currentApproval) {
+        approvalSection.classList.add('hidden');
+        return;
+      }
+      
+      approvalSection.classList.remove('hidden');
+      
+      const type = currentApproval.type;
+      let html = '';
+      
+      if (type === 'confirm_send') {
+        html = `
+          <div class="approval-card">
+            <div class="approval-header">
+              <span class="approval-type">📨 Confirm Send</span>
+              <span class="approval-time">${new Date().toLocaleTimeString()}</span>
+            </div>
+            <div class="approval-title">Send to ${currentApproval.count} chats?</div>
+            <div class="approval-subtitle">${currentApproval.label}${currentApproval.skipped > 0 ? ` (${currentApproval.skipped} already messaged)` : ''}</div>
+            <div class="approval-actions">
+              <button class="btn btn-danger" onclick="respondApproval(false)">Clear</button>
+              <button class="btn btn-primary" onclick="respondApproval(true)">Send</button>
+            </div>
+          </div>
+        `;
+      } else if (type === 'exclusions') {
+        const groups = currentApproval.groupNames || [];
+        html = `
+          <div class="approval-card">
+            <div class="approval-header">
+              <span class="approval-type">🚫 Exclusions</span>
+              <span class="approval-time">${new Date().toLocaleTimeString()}</span>
+            </div>
+            <div class="approval-title">Exclusions for: ${currentApproval.label}</div>
+            <div class="approval-subtitle">${groups.length} groups in this label</div>
+            ${groups.length > 0 ? `
+              <div class="group-list" style="max-height:150px;overflow-y:auto;background:#111b21;border-radius:8px;padding:8px;margin:8px 0;">
+                ${groups.map(g => `
+                  <div class="group-chip" onclick="addToExclusion('${g.replace(/'/g, "\\'")}')" 
+                       style="display:inline-block;background:#202c33;padding:4px 10px;border-radius:12px;margin:3px;font-size:12px;cursor:pointer;">
+                    ${g}
+                  </div>
+                `).join('')}
+              </div>
+              <div style="font-size:11px;color:#8696a0;margin-bottom:8px;">Tap group names to add to exclusions</div>
+            ` : ''}
+            <input type="text" class="approval-input" id="exclusions-input" placeholder="Names to exclude (comma separated)">
+            <div class="approval-actions">
+              <button class="btn btn-secondary" onclick="respondApproval(null)">Cancel</button>
+              <button class="btn btn-primary" onclick="respondApproval(document.getElementById('exclusions-input').value)">Continue</button>
+            </div>
+          </div>
+        `;
+      } else if (type === 'revision') {
+        html = `
+          <div class="approval-card">
+            <div class="approval-header">
+              <span class="approval-type">✏️ Revise Message</span>
+              <span class="approval-time">${new Date().toLocaleTimeString()}</span>
+            </div>
+            <div class="approval-title">
+              ${currentApproval.label}
+              <span class="price-badge ${currentApproval.removePrice ? 'remove' : 'keep'}">${currentApproval.removePrice ? 'Remove $' : 'Keep $'}</span>
+            </div>
+            ${currentApproval.queue > 0 ? `<div class="approval-subtitle">${currentApproval.queue} more labels after this</div>` : ''}
+            <textarea class="approval-textarea" id="revision-input">${currentApproval.text || ''}</textarea>
+            <div class="approval-actions">
+              <button class="btn btn-secondary" onclick="respondApproval(null)">Skip</button>
+              <button class="btn btn-primary" onclick="respondApproval(document.getElementById('revision-input').value)">OK</button>
+            </div>
+          </div>
+        `;
+      } else if (type === 'label_selection') {
+        const labels = currentApproval.labels || [];
+        html = `
+          <div class="approval-card">
+            <div class="approval-header">
+              <span class="approval-type">🏷️ Select Labels</span>
+              <span class="approval-time">${new Date().toLocaleTimeString()}</span>
+            </div>
+            <div class="approval-title">Select labels to process</div>
+            <div class="label-list" id="label-list">
+              ${labels.map((l, i) => `
+                <div class="label-chip ${i === 0 ? 'selected' : ''}" data-index="${i}" onclick="toggleLabel(this)">
+                  ${l.name}
+                  <span class="price-badge ${l.removePrice ? 'remove' : 'keep'}" style="margin-left:4px;">${l.removePrice ? '-$' : '+$'}</span>
+                </div>
+              `).join('')}
+            </div>
+            <div class="approval-actions">
+              <button class="btn btn-secondary" onclick="respondApproval([])">Skip</button>
+              <button class="btn btn-primary" onclick="respondLabelSelection()">Process</button>
+            </div>
+          </div>
+        `;
+      }
+      
+      approvalSection.innerHTML = html;
+    }
+    
+    // Toggle label selection
+    function toggleLabel(el) {
+      el.classList.toggle('selected');
+    }
+    
+    // Add to exclusion input
+    function addToExclusion(name) {
+      const input = document.getElementById('exclusions-input');
+      if (!input) return;
+      
+      const current = input.value.trim();
+      if (current) {
+        const existing = current.split(',').map(s => s.trim().toLowerCase());
+        if (existing.includes(name.toLowerCase())) {
+          showToast('Already added');
+          return;
+        }
+        input.value = current + ', ' + name;
+      } else {
+        input.value = name;
+      }
+      showToast('Added: ' + name);
+    }
+    
+    // Respond to label selection
+    function respondLabelSelection() {
+      const selected = Array.from(document.querySelectorAll('.label-chip.selected'))
+        .map(el => parseInt(el.dataset.index));
+      if (selected.length === 0) {
+        showToast('Please select at least one label');
+        return;
+      }
+      respondApproval(selected);
+    }
+    
+    // Respond to approval request
+    function respondApproval(response) {
+      if (!sessionId) return;
+      
+      console.log('[WOR App] Sending approval response:', response);
+      
+      db.ref(`sessions/${sessionId}/approvalResponse`).set({
+        response: response,
+        timestamp: Date.now()
+      });
+      
+      // Clear the request
+      db.ref(`sessions/${sessionId}/approvalRequest`).remove();
+      
+      // Hide approval section
+      approvalSection.classList.add('hidden');
+      approvalSection.innerHTML = '';
+      currentApproval = null;
+      
+      showToast('Response sent!');
+    }
+    
+    // Send command to extension
+    function sendCommand(command) {
+      if (!sessionId) return;
+      
+      db.ref(`sessions/${sessionId}/command`).set({
+        type: command,
+        timestamp: Date.now()
+      });
+      
+      showToast('Command sent: ' + command);
+    }
+    
+    // Work on offer
+    function workOffer(offerId) {
+      if (!sessionId) return;
+      
+      db.ref(`sessions/${sessionId}/command`).set({
+        type: 'WORK_OFFER',
+        offerId: offerId,
+        timestamp: Date.now()
+      });
+      
+      showToast('Working on offer...');
+    }
+    
+    // Skip offer
+    function skipOffer(offerId) {
+      if (!sessionId) return;
+      
+      db.ref(`sessions/${sessionId}/command`).set({
+        type: 'SKIP_OFFER',
+        offerId: offerId,
+        timestamp: Date.now()
+      });
+      
+      showToast('Offer skipped');
+    }
+    
+    // Switch tabs
+    function switchTab(tab) {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelector(`.tab[data-tab="${tab}"]`).classList.add('active');
+      
+      document.getElementById('tab-pending').classList.toggle('active', tab === 'pending');
+      document.getElementById('tab-completed').classList.toggle('active', tab === 'completed');
+    }
+    
+    // Show toast
+    function showToast(message) {
+      const existing = document.querySelector('.toast');
+      if (existing) existing.remove();
+      
+      const toast = document.createElement('div');
+      toast.className = 'toast';
+      toast.textContent = message;
+      document.body.appendChild(toast);
+      
+      setTimeout(() => toast.remove(), 3000);
+    }
+    
+    // Settings
+    function showSettings() {
+      document.getElementById('settings-modal').classList.remove('hidden');
+    }
+    
+    function hideSettings() {
+      document.getElementById('settings-modal').classList.add('hidden');
+    }
+    
+    function copySessionId() {
+      navigator.clipboard.writeText(sessionId).then(() => {
+        showToast('Session ID copied!');
+      });
+    }
+    
+    // Disconnect
+    function disconnect() {
+      localStorage.removeItem('wor_session_id');
+      sessionId = '';
+      
+      // Unsubscribe
+      unsubscribers.forEach(unsub => unsub());
+      unsubscribers = [];
+      
+      // Show connection screen
+      mainApp.classList.remove('active');
+      connectionScreen.classList.remove('hidden');
+      sessionInput.value = '';
+      
+      hideSettings();
+      showToast('Disconnected');
+    }
+    
+    // Format time
+    function formatTime(timestamp) {
+      if (!timestamp) return '';
+      const date = new Date(timestamp);
+      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+    
+    // Keep screen awake (for Android)
+    if ('wakeLock' in navigator) {
+      navigator.wakeLock.request('screen').catch(() => {});
+    }
+  </script>
+</body>
+</html>
