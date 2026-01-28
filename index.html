@@ -542,6 +542,13 @@
         </div>
       </div>
       <div class="settings-group">
+        <div class="settings-label">Sound</div>
+        <div class="settings-value">
+          <span id="sound-status">Tap to enable</span>
+          <button class="btn btn-secondary" onclick="testSound()" style="padding:6px 12px;font-size:12px;">🔊 Test</button>
+        </div>
+      </div>
+      <div class="settings-group">
         <div class="settings-label">Debug Log</div>
         <div class="debug-log" id="debug-log"></div>
       </div>
@@ -668,6 +675,61 @@
       sendNotification('Test Notification', 'If you see this, notifications work! 🔔');
     }
     
+    function testSound() {
+      log('Testing sound...');
+      soundEnabled = true;
+      document.getElementById('sound-status').textContent = 'Enabled ✓';
+      playNotificationSound();
+      showToast('Sound test played!');
+    }
+    
+    // Sound enabled flag (Android requires user gesture to play audio)
+    let soundEnabled = false;
+    
+    // Enable sound on any user interaction
+    document.addEventListener('click', function enableSound() {
+      if (!soundEnabled) {
+        soundEnabled = true;
+        // Preload sounds
+        notificationSound.load();
+        backupSound.load();
+        document.getElementById('sound-status').textContent = 'Enabled ✓';
+        log('Sound enabled via user interaction');
+      }
+    }, { once: false });
+    
+    // Notification sound - a proper alert tone
+    const notificationSound = new Audio();
+    notificationSound.src = 'https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3';
+    notificationSound.volume = 1.0;
+    notificationSound.load();
+    
+    // Backup sound (shorter beep)
+    const backupSound = new Audio('data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA//tQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAABhgC7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7//////////////////////////////////////////////////////////////////8AAAAATGF2YzU4LjEzAAAAAAAAAAAAAAAAJAAAAAAAAAAAAYYNBqSsAAAAAAAAAAAAAAAAAAAA//tQZAAP8AAAaQAAAAgAAA0gAAABAAABpAAAACAAADSAAAAETEFNRTMuMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//tQZB4P8AAAaQAAAAgAAA0gAAABAAABpAAAACAAADSAAAAEVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV');
+    backupSound.volume = 1.0;
+    
+    function playNotificationSound() {
+      if (!soundEnabled) {
+        log('Sound not enabled yet (need user interaction first)');
+        return;
+      }
+      
+      log('Playing notification sound...');
+      
+      // Try primary sound first
+      notificationSound.currentTime = 0;
+      notificationSound.play()
+        .then(() => log('Sound played successfully'))
+        .catch(err => {
+          log('Primary sound failed: ' + err.message + ', trying backup...');
+          // Try backup sound
+          backupSound.currentTime = 0;
+          backupSound.play()
+            .then(() => log('Backup sound played'))
+            .catch(e => log('Backup sound also failed: ' + e.message));
+        });
+    }
+    
     function sendNotification(title, body) {
       log('sendNotification called: ' + title);
       
@@ -682,18 +744,14 @@
       }
       
       try {
+        // Play sound FIRST (most important)
+        playNotificationSound();
+        
         // Vibrate
         if ('vibrate' in navigator) {
-          navigator.vibrate([200, 100, 200]);
+          navigator.vibrate([200, 100, 200, 100, 200]);
           log('Vibrated');
         }
-        
-        // Play sound (optional)
-        try {
-          const audio = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdH2Onp2ZlYyDfXd4gIiQkpGOiYR+eHV2eoCGiouKiIWBfXl2dXl+g4iLjIuJhYF9eXZ1eH2DiIuNjYuHg356d3Z5fYKHi42OjYqGgn56d3d7gIWKjI6OjImFgX17eHl8gYaJjI6OjYqGgn57eXl8gIWJjI6OjYqHg398enp8f4SIi42OjYuHhH98enp8f4OHi42OjouIhYF+e3p7foKGio2OjoyJhoN/fHt7fYGFiYyOjo2KiIWCf3x7fH6ChomMjo6NioiEgX58e3x+goaJjI6OjYqIhIF+fHt8foKGiYyOjo2KiIWBfnx7fH6ChomMjo6NioiFgX58e3x+goaJjI6OjYqIhYF+fHt8foKFiYyOjo2KiIWCf3x7fH6ChYmMjo6NioiFgX58e3x+goWJjI6OjYqIhYJ/fHt8fYKFiYyOjo2KiIWBfnx7fH6ChYmMjo6NioiFgn98fHx9goWJjI6OjYqIhYJ/fHx8fYKFiYyOjo2KiIWBfnx7fH6ChYmMjo6NioiFgX98e3x9goWJjI6OjYqIhYF+fHt8foKFiYyOjo2KiIWBfnx7fH6ChYmMjo6Ni4iFgX58e3x+goWJjI6Ojo2KiIWBfnx7fH6ChYmMjo6NioiFgX58e3x+goWJjI6OjYqIhYF+fHt8foKFiYyOjo2KiIWBfnx7fH6ChYmMjo6NioiFgX58e3x+goWJjI6OjYqI');
-          audio.volume = 0.3;
-          audio.play().catch(() => {});
-        } catch(e) {}
         
         // Create notification
         const notification = new Notification(title, {
