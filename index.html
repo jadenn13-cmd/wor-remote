@@ -811,14 +811,27 @@
       
       const sessionRef = db.ref(`sessions/${sessionId}`);
       
-      // Listen to status
+      // Listen to status - check both formats
       const statusRef = sessionRef.child('status');
       statusRef.on('value', (snapshot) => {
         const data = snapshot.val();
+        log('Status data received: ' + JSON.stringify(data));
+        
         if (data) {
-          currentStatus = data.status || 'disconnected';
+          // Handle both formats: {status: 'monitoring'} or just 'monitoring'
+          if (typeof data === 'string') {
+            currentStatus = data;
+          } else if (data.status) {
+            currentStatus = data.status;
+          } else {
+            currentStatus = 'disconnected';
+          }
           updateStatusUI();
-          log('Status: ' + currentStatus);
+          log('Status updated to: ' + currentStatus);
+        } else {
+          currentStatus = 'disconnected';
+          updateStatusUI();
+          log('Status is null, set to disconnected');
         }
       });
       unsubscribers.push(() => statusRef.off());
@@ -868,9 +881,19 @@
       const approvalRef = sessionRef.child('approvalRequest');
       approvalRef.on('value', (snapshot) => {
         const newApproval = snapshot.val();
+        log('Approval request update: ' + (newApproval ? newApproval.type : 'null/cleared'));
+        
+        // If approval is null/removed, hide the section immediately
+        if (!newApproval) {
+          currentApproval = null;
+          approvalSection.classList.add('hidden');
+          approvalSection.innerHTML = '';
+          log('Approval cleared');
+          return;
+        }
         
         // Only notify if this is a NEW approval (not on first load)
-        if (newApproval && !isFirstLoad && (!currentApproval || currentApproval.timestamp !== newApproval.timestamp)) {
+        if (!isFirstLoad && (!currentApproval || currentApproval.timestamp !== newApproval.timestamp)) {
           log('New approval request: ' + newApproval.type);
           const typeMap = {
             'confirm_send': '📨 Confirm Send',
@@ -885,6 +908,20 @@
         renderApproval();
       });
       unsubscribers.push(() => approvalRef.off());
+      
+      // Also listen for approvalResponse to detect when extension responds itself
+      const responseRef = sessionRef.child('approvalResponse');
+      responseRef.on('value', (snapshot) => {
+        const response = snapshot.val();
+        if (response) {
+          log('Extension sent response, clearing approval UI');
+          // Clear local approval state since extension handled it
+          currentApproval = null;
+          approvalSection.classList.add('hidden');
+          approvalSection.innerHTML = '';
+        }
+      });
+      unsubscribers.push(() => responseRef.off());
       
       // Set connected
       sessionRef.child('remoteConnected').set(true);
@@ -1181,6 +1218,34 @@
     setInterval(() => {
       log('Keep alive ping');
     }, 30000);
+    
+    // Android native app interface
+    function injectSession(sessionId) {
+      if (sessionId && sessionId.length === 6) {
+        sessionInput.value = sessionId;
+        connect();
+      }
+    }
+    
+    // Override connect to save to native app
+    const originalConnect = connect;
+    connect = function() {
+      originalConnect();
+      // Save to Android app if available
+      if (typeof Android !== 'undefined' && Android.saveSession) {
+        Android.saveSession(sessionId);
+        log('Session saved to Android app');
+      }
+    };
+    
+    // Load session from Android app on startup
+    if (typeof Android !== 'undefined' && Android.getSession) {
+      const savedSession = Android.getSession();
+      if (savedSession && savedSession.length === 6 && !sessionId) {
+        sessionInput.value = savedSession;
+        connect();
+      }
+    }
   </script>
 </body>
 </html>
