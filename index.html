@@ -199,11 +199,6 @@
       font-size: 14px;
     }
     
-    .approval-time {
-      font-size: 11px;
-      color: #8696a0;
-    }
-    
     .approval-title {
       font-size: 16px;
       font-weight: 600;
@@ -374,6 +369,8 @@
       border-radius: 16px;
       width: 90%;
       max-width: 340px;
+      max-height: 90vh;
+      overflow-y: auto;
       padding: 20px;
     }
     
@@ -399,8 +396,7 @@
       padding: 12px;
       border-radius: 8px;
       font-family: monospace;
-      font-size: 16px;
-      letter-spacing: 2px;
+      font-size: 14px;
       display: flex;
       justify-content: space-between;
       align-items: center;
@@ -441,15 +437,14 @@
       background: #0a1014;
       border-radius: 8px;
       padding: 10px;
-      margin-top: 10px;
       font-family: monospace;
-      font-size: 11px;
-      max-height: 150px;
+      font-size: 10px;
+      max-height: 200px;
       overflow-y: auto;
       color: #8696a0;
+      white-space: pre-wrap;
+      word-break: break-all;
     }
-    
-    .debug-log.hidden { display: none; }
   </style>
 </head>
 <body>
@@ -538,19 +533,12 @@
         <div class="settings-label">Notifications</div>
         <div class="settings-value">
           <span id="notification-status">Not enabled</span>
-          <button class="btn btn-secondary" id="btn-test-notif" onclick="testNotification()" style="padding:6px 12px;font-size:12px;">Test</button>
-        </div>
-      </div>
-      <div class="settings-group">
-        <div class="settings-label">Sound</div>
-        <div class="settings-value">
-          <span id="sound-status">Tap to enable</span>
-          <button class="btn btn-secondary" onclick="testSound()" style="padding:6px 12px;font-size:12px;">🔊 Test</button>
+          <button class="btn btn-secondary" onclick="testNotification()" style="padding:6px 12px;font-size:12px;">Test</button>
         </div>
       </div>
       <div class="settings-group">
         <div class="settings-label">Debug Log</div>
-        <div class="debug-log" id="debug-log"></div>
+        <div class="debug-log" id="debug-log">Waiting for events...</div>
       </div>
       <div class="settings-actions">
         <button class="btn btn-secondary" onclick="hideSettings()">Close</button>
@@ -569,9 +557,16 @@
     function log(msg) {
       console.log('[WOR]', msg);
       const time = new Date().toLocaleTimeString();
-      debugLog.innerHTML = `${time}: ${msg}<br>` + debugLog.innerHTML;
-      if (debugLog.children.length > 50) {
-        debugLog.innerHTML = debugLog.innerHTML.split('<br>').slice(0, 50).join('<br>');
+      const line = time + ': ' + msg;
+      debugLog.textContent = line + '\n' + debugLog.textContent;
+      // Keep only last 100 lines
+      const lines = debugLog.textContent.split('\n');
+      if (lines.length > 100) {
+        debugLog.textContent = lines.slice(0, 100).join('\n');
+      }
+      // Also log to Android if available
+      if (typeof Android !== 'undefined' && Android.log) {
+        Android.log(msg);
       }
     }
     
@@ -598,6 +593,7 @@
     let lastKnownOfferIds = new Set(JSON.parse(localStorage.getItem('wor_known_offers') || '[]'));
     let notificationsEnabled = false;
     let isFirstLoad = true;
+    let lastPendingCount = 0;
     
     // DOM elements
     const connectionScreen = document.getElementById('connection-screen');
@@ -645,7 +641,7 @@
       log('Requesting notification permission...');
       
       if (!('Notification' in window)) {
-        showToast('Notifications not supported on this device');
+        showToast('Notifications not supported');
         return;
       }
       
@@ -657,124 +653,55 @@
           notificationBanner.classList.add('hidden');
           document.getElementById('notification-status').textContent = 'Enabled ✓';
           showToast('Notifications enabled!');
-          
-          // Send test notification immediately
           sendNotification('WOR Remote', 'Notifications are now enabled! 🎉');
         } else {
-          showToast('Permission denied. Check browser settings.');
+          showToast('Permission denied');
         }
         checkNotificationPermission();
-      }).catch(err => {
-        log('Permission error: ' + err);
-        showToast('Error requesting permission');
       });
     }
     
     function testNotification() {
       log('Testing notification...');
       sendNotification('Test Notification', 'If you see this, notifications work! 🔔');
-    }
-    
-    function testSound() {
-      log('Testing sound...');
-      soundEnabled = true;
-      document.getElementById('sound-status').textContent = 'Enabled ✓';
-      playNotificationSound();
-      showToast('Sound test played!');
-    }
-    
-    // Sound enabled flag (Android requires user gesture to play audio)
-    let soundEnabled = false;
-    
-    // Enable sound on any user interaction
-    document.addEventListener('click', function enableSound() {
-      if (!soundEnabled) {
-        soundEnabled = true;
-        // Preload sounds
-        notificationSound.load();
-        backupSound.load();
-        document.getElementById('sound-status').textContent = 'Enabled ✓';
-        log('Sound enabled via user interaction');
-      }
-    }, { once: false });
-    
-    // Notification sound - a proper alert tone
-    const notificationSound = new Audio();
-    notificationSound.src = 'https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3';
-    notificationSound.volume = 1.0;
-    notificationSound.load();
-    
-    // Backup sound (shorter beep)
-    const backupSound = new Audio('data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA//tQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAABhgC7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7//////////////////////////////////////////////////////////////////8AAAAATGF2YzU4LjEzAAAAAAAAAAAAAAAAJAAAAAAAAAAAAYYNBqSsAAAAAAAAAAAAAAAAAAAA//tQZAAP8AAAaQAAAAgAAA0gAAABAAABpAAAACAAADSAAAAETEFNRTMuMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//tQZB4P8AAAaQAAAAgAAA0gAAABAAABpAAAACAAADSAAAAEVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV');
-    backupSound.volume = 1.0;
-    
-    function playNotificationSound() {
-      if (!soundEnabled) {
-        log('Sound not enabled yet (need user interaction first)');
-        return;
-      }
-      
-      log('Playing notification sound...');
-      
-      // Try primary sound first
-      notificationSound.currentTime = 0;
-      notificationSound.play()
-        .then(() => log('Sound played successfully'))
-        .catch(err => {
-          log('Primary sound failed: ' + err.message + ', trying backup...');
-          // Try backup sound
-          backupSound.currentTime = 0;
-          backupSound.play()
-            .then(() => log('Backup sound played'))
-            .catch(e => log('Backup sound also failed: ' + e.message));
-        });
+      showToast('Test notification sent');
     }
     
     function sendNotification(title, body) {
-      log('sendNotification called: ' + title);
+      log('sendNotification: ' + title + ' - ' + body);
       
+      // Try native Android notification first
+      if (typeof Android !== 'undefined' && Android.showNotification) {
+        log('Using Android native notification');
+        Android.showNotification(title, body);
+        return;
+      }
+      
+      // Fall back to web notification
       if (!('Notification' in window)) {
-        log('Notifications not supported');
+        log('Web notifications not supported');
         return;
       }
       
       if (Notification.permission !== 'granted') {
-        log('Notifications not granted');
+        log('Web notifications not granted');
         return;
       }
       
       try {
-        // Play sound FIRST (most important)
-        playNotificationSound();
-        
-        // Vibrate
-        if ('vibrate' in navigator) {
-          navigator.vibrate([200, 100, 200, 100, 200]);
-          log('Vibrated');
-        }
-        
-        // Create notification
         const notification = new Notification(title, {
           body: body,
           icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect fill="%23111b21" width="100" height="100" rx="20"/><text x="50" y="65" font-size="50" text-anchor="middle">📱</text></svg>',
-          badge: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">📱</text></svg>',
           tag: 'wor-' + Date.now(),
-          requireInteraction: true,
-          silent: false
+          requireInteraction: true
         });
         
-        log('Notification created');
-        
         notification.onclick = function() {
-          log('Notification clicked');
           window.focus();
           notification.close();
         };
         
-        notification.onerror = function(e) {
-          log('Notification error: ' + e);
-        };
-        
+        log('Web notification created');
       } catch (err) {
         log('Notification error: ' + err.message);
       }
@@ -784,12 +711,19 @@
     function connect() {
       const input = sessionInput.value.trim().toUpperCase();
       if (input.length !== 6) {
-        showToast('Please enter a 6-character Session ID');
+        showToast('Enter a 6-character Session ID');
         return;
       }
       
       sessionId = input;
       localStorage.setItem('wor_session_id', sessionId);
+      
+      // Save to Android app if available
+      if (typeof Android !== 'undefined' && Android.saveSession) {
+        Android.saveSession(sessionId);
+        log('Session saved to Android');
+      }
+      
       log('Connecting to session: ' + sessionId);
       
       // Show main app
@@ -802,59 +736,76 @@
       subscribeToSession();
     }
     
+    // Inject session from Android app
+    function injectSession(id) {
+      log('Session injected from Android: ' + id);
+      if (id && id.length === 6) {
+        sessionInput.value = id;
+        connect();
+      }
+    }
+    
     // Subscribe to session data
     function subscribeToSession() {
       // Unsubscribe from any previous subscriptions
       unsubscribers.forEach(unsub => unsub());
       unsubscribers = [];
       isFirstLoad = true;
+      lastPendingCount = 0;
       
       const sessionRef = db.ref(`sessions/${sessionId}`);
       
-      // Listen to status - check both formats
+      // Listen to status
       const statusRef = sessionRef.child('status');
       statusRef.on('value', (snapshot) => {
         const data = snapshot.val();
-        log('Status data received: ' + JSON.stringify(data));
+        log('Status update: ' + JSON.stringify(data));
         
         if (data) {
-          // Handle both formats: {status: 'monitoring'} or just 'monitoring'
-          if (typeof data === 'string') {
-            currentStatus = data;
-          } else if (data.status) {
+          // Extension stores as {status: 'monitoring', timestamp: ...}
+          if (typeof data === 'object' && data.status) {
             currentStatus = data.status;
+          } else if (typeof data === 'string') {
+            currentStatus = data;
           } else {
             currentStatus = 'disconnected';
           }
-          updateStatusUI();
-          log('Status updated to: ' + currentStatus);
         } else {
           currentStatus = 'disconnected';
-          updateStatusUI();
-          log('Status is null, set to disconnected');
         }
+        
+        updateStatusUI();
+        log('Status set to: ' + currentStatus);
       });
       unsubscribers.push(() => statusRef.off());
       
       // Listen to pending queue
       const pendingRef = sessionRef.child('pendingQueue');
       pendingRef.on('value', (snapshot) => {
-        const newQueue = snapshot.val() ? Object.values(snapshot.val()) : [];
-        log('Pending queue updated: ' + newQueue.length + ' items');
+        const data = snapshot.val();
+        const newQueue = data ? Object.values(data) : [];
+        log('Pending update: ' + newQueue.length + ' offers');
         
-        // Find NEW offers (not seen before)
+        // Check for NEW offers
+        const newCount = newQueue.length;
         const newOfferIds = new Set(newQueue.map(o => o.id));
-        const brandNewOffers = newQueue.filter(o => !lastKnownOfferIds.has(o.id));
         
-        log('Brand new offers: ' + brandNewOffers.length);
+        // Find offers we haven't seen
+        let newOffersFound = 0;
+        newQueue.forEach(offer => {
+          if (offer.id && !lastKnownOfferIds.has(offer.id)) {
+            newOffersFound++;
+            log('NEW offer detected: ' + offer.id + ' - ' + (offer.summary || 'no summary'));
+          }
+        });
         
-        // Send notification for new offers (skip on first load)
-        if (!isFirstLoad && brandNewOffers.length > 0) {
-          const offer = brandNewOffers[0];
-          log('Sending notification for: ' + (offer.summary || 'New offer'));
+        // Send notification if new offers and not first load
+        if (!isFirstLoad && newOffersFound > 0) {
+          const latestOffer = newQueue[newQueue.length - 1];
+          log('Sending notification for new offer');
           sendNotification(
-            '🔔 New Offer!', 
-            offer.summary || 'A new offer is waiting for you'
+            '🔔 New Offer!',
+            latestOffer.summary || 'A new offer is waiting'
           );
         }
         
@@ -863,6 +814,7 @@
         localStorage.setItem('wor_known_offers', JSON.stringify([...newOfferIds]));
         
         pendingQueue = newQueue;
+        lastPendingCount = newCount;
         renderPendingQueue();
         isFirstLoad = false;
       });
@@ -871,7 +823,8 @@
       // Listen to completed
       const completedRef = sessionRef.child('completedToday');
       completedRef.on('value', (snapshot) => {
-        completedToday = snapshot.val() ? Object.values(snapshot.val()) : [];
+        const data = snapshot.val();
+        completedToday = data ? Object.values(data) : [];
         renderCompletedList();
         log('Completed: ' + completedToday.length);
       });
@@ -881,23 +834,21 @@
       const approvalRef = sessionRef.child('approvalRequest');
       approvalRef.on('value', (snapshot) => {
         const newApproval = snapshot.val();
-        log('Approval request update: ' + (newApproval ? newApproval.type : 'null/cleared'));
+        log('Approval update: ' + (newApproval ? newApproval.type : 'null'));
         
-        // If approval is null/removed, hide the section immediately
+        // If null, clear approval UI
         if (!newApproval) {
           currentApproval = null;
           approvalSection.classList.add('hidden');
           approvalSection.innerHTML = '';
-          log('Approval cleared');
           return;
         }
         
-        // Only notify if this is a NEW approval (not on first load)
+        // Notify if new approval (not first load)
         if (!isFirstLoad && (!currentApproval || currentApproval.timestamp !== newApproval.timestamp)) {
-          log('New approval request: ' + newApproval.type);
           const typeMap = {
             'confirm_send': '📨 Confirm Send',
-            'exclusions': '🚫 Set Exclusions', 
+            'exclusions': '🚫 Set Exclusions',
             'revision': '✏️ Review Message',
             'label_selection': '🏷️ Select Labels'
           };
@@ -909,13 +860,11 @@
       });
       unsubscribers.push(() => approvalRef.off());
       
-      // Also listen for approvalResponse to detect when extension responds itself
+      // Listen to approval response (to clear UI when extension responds)
       const responseRef = sessionRef.child('approvalResponse');
       responseRef.on('value', (snapshot) => {
-        const response = snapshot.val();
-        if (response) {
-          log('Extension sent response, clearing approval UI');
-          // Clear local approval state since extension handled it
+        if (snapshot.val()) {
+          log('Approval response detected, clearing UI');
           currentApproval = null;
           approvalSection.classList.add('hidden');
           approvalSection.innerHTML = '';
@@ -923,7 +872,7 @@
       });
       unsubscribers.push(() => responseRef.off());
       
-      // Set connected
+      // Mark as connected
       sessionRef.child('remoteConnected').set(true);
       sessionRef.child('remoteConnected').onDisconnect().set(false);
       
@@ -946,14 +895,20 @@
       statusBadge.textContent = status.text;
       statusBadge.className = 'status-badge ' + status.class;
       
-      document.getElementById('btn-run').disabled = currentStatus === 'monitoring' || currentStatus === 'processing';
-      document.getElementById('btn-pause').disabled = currentStatus !== 'monitoring';
-      document.getElementById('btn-stop').disabled = currentStatus === 'stopped';
+      // Update buttons
+      const btnRun = document.getElementById('btn-run');
+      const btnPause = document.getElementById('btn-pause');
+      const btnStop = document.getElementById('btn-stop');
+      
+      btnRun.disabled = (currentStatus === 'monitoring' || currentStatus === 'processing');
+      btnPause.disabled = (currentStatus !== 'monitoring');
+      btnStop.disabled = (currentStatus === 'stopped');
     }
     
     // Render pending queue
     function renderPendingQueue() {
-      document.getElementById('pending-badge').textContent = pendingQueue.length > 0 ? `(${pendingQueue.length})` : '';
+      const badge = document.getElementById('pending-badge');
+      badge.textContent = pendingQueue.length > 0 ? `(${pendingQueue.length})` : '';
       
       if (pendingQueue.length === 0) {
         pendingList.innerHTML = `
@@ -969,7 +924,7 @@
         <div class="queue-item">
           <div class="queue-item-header">
             <span class="queue-item-title">${offer.summary || 'Offer'}</span>
-            <span class="queue-item-time">${formatTime(offer.timestamp)}</span>
+            <span class="queue-item-time">${formatTime(offer.addedAt || offer.timestamp)}</span>
           </div>
           <div class="queue-item-preview">${(offer.text || '').substring(0, 100)}...</div>
           <div class="queue-item-actions">
@@ -982,7 +937,8 @@
     
     // Render completed list
     function renderCompletedList() {
-      document.getElementById('completed-badge').textContent = completedToday.length > 0 ? `(${completedToday.length})` : '';
+      const badge = document.getElementById('completed-badge');
+      badge.textContent = completedToday.length > 0 ? `(${completedToday.length})` : '';
       
       if (completedToday.length === 0) {
         completedList.innerHTML = `
@@ -1013,7 +969,6 @@
       }
       
       approvalSection.classList.remove('hidden');
-      
       const type = currentApproval.type;
       let html = '';
       
@@ -1023,8 +978,8 @@
             <div class="approval-header">
               <span class="approval-type">📨 Confirm Send</span>
             </div>
-            <div class="approval-title">Send to ${currentApproval.count} chats?</div>
-            <div class="approval-subtitle">${currentApproval.label}${currentApproval.skipped > 0 ? ` (${currentApproval.skipped} skipped)` : ''}</div>
+            <div class="approval-title">Send to ${currentApproval.count || '?'} chats?</div>
+            <div class="approval-subtitle">${currentApproval.label || ''}${currentApproval.skipped > 0 ? ` (${currentApproval.skipped} skipped)` : ''}</div>
             <div class="approval-actions">
               <button class="btn btn-danger" onclick="respondApproval(false)">Clear</button>
               <button class="btn btn-primary" onclick="respondApproval(true)">Send</button>
@@ -1038,7 +993,7 @@
             <div class="approval-header">
               <span class="approval-type">🚫 Exclusions</span>
             </div>
-            <div class="approval-title">Label: ${currentApproval.label}</div>
+            <div class="approval-title">Label: ${currentApproval.label || ''}</div>
             ${groups.length > 0 ? `
               <div style="max-height:120px;overflow-y:auto;background:#111b21;border-radius:8px;padding:8px;margin:8px 0;">
                 ${groups.map(g => `<span onclick="addToExclusion('${g.replace(/'/g, "\\'")}')" style="display:inline-block;background:#202c33;padding:4px 8px;border-radius:8px;margin:2px;font-size:12px;cursor:pointer;">${g}</span>`).join('')}
@@ -1057,7 +1012,7 @@
             <div class="approval-header">
               <span class="approval-type">✏️ Revise Message</span>
             </div>
-            <div class="approval-title">${currentApproval.label} <span class="price-badge ${currentApproval.removePrice ? 'remove' : 'keep'}">${currentApproval.removePrice ? '-$' : '+$'}</span></div>
+            <div class="approval-title">${currentApproval.label || ''} <span class="price-badge ${currentApproval.removePrice ? 'remove' : 'keep'}">${currentApproval.removePrice ? '-$' : '+$'}</span></div>
             ${currentApproval.queue > 0 ? `<div class="approval-subtitle">${currentApproval.queue} more labels after</div>` : ''}
             <textarea class="approval-textarea" id="revision-input">${currentApproval.text || ''}</textarea>
             <div class="approval-actions">
@@ -1076,7 +1031,7 @@
             <div class="label-list" id="label-list">
               ${labels.map((l, i) => `
                 <div class="label-chip selected" data-index="${i}" onclick="toggleLabel(this)">
-                  ${l.name} <span class="price-badge ${l.removePrice ? 'remove' : 'keep'}">${l.removePrice ? '-$' : '+$'}</span>
+                  ${l.name || l} <span class="price-badge ${l.removePrice ? 'remove' : 'keep'}">${l.removePrice ? '-$' : '+$'}</span>
                 </div>
               `).join('')}
             </div>
@@ -1126,9 +1081,14 @@
         timestamp: Date.now()
       });
       
+      // Clear approval request
       db.ref(`sessions/${sessionId}/approvalRequest`).remove();
-      approvalSection.classList.add('hidden');
+      
+      // Clear local UI
       currentApproval = null;
+      approvalSection.classList.add('hidden');
+      approvalSection.innerHTML = '';
+      
       showToast('Response sent!');
     }
     
@@ -1214,38 +1174,12 @@
       return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     }
     
-    // Keep alive - prevent page from sleeping
+    // Keep connection alive
     setInterval(() => {
-      log('Keep alive ping');
+      if (sessionId) {
+        db.ref(`sessions/${sessionId}/remoteConnected`).set(true);
+      }
     }, 30000);
-    
-    // Android native app interface
-    function injectSession(sessionId) {
-      if (sessionId && sessionId.length === 6) {
-        sessionInput.value = sessionId;
-        connect();
-      }
-    }
-    
-    // Override connect to save to native app
-    const originalConnect = connect;
-    connect = function() {
-      originalConnect();
-      // Save to Android app if available
-      if (typeof Android !== 'undefined' && Android.saveSession) {
-        Android.saveSession(sessionId);
-        log('Session saved to Android app');
-      }
-    };
-    
-    // Load session from Android app on startup
-    if (typeof Android !== 'undefined' && Android.getSession) {
-      const savedSession = Android.getSession();
-      if (savedSession && savedSession.length === 6 && !sessionId) {
-        sessionInput.value = savedSession;
-        connect();
-      }
-    }
   </script>
 </body>
 </html>
