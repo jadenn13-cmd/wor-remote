@@ -124,6 +124,11 @@
       margin-bottom: 10px;
     }
     
+    .queue-item.working {
+      background: #1a3a4a;
+      border: 1px solid #00a884;
+    }
+    
     .queue-item-header {
       display: flex;
       justify-content: space-between;
@@ -616,10 +621,19 @@
     checkNotificationPermission();
     
     function checkNotificationPermission() {
-      if (!('Notification' in window)) {
-        log('Notifications not supported');
+      // Check if running in Android WebView
+      if (typeof Android !== 'undefined' && Android.showNotification) {
+        log('Android native notifications available');
+        notificationsEnabled = true;
         notificationBanner.classList.add('hidden');
-        document.getElementById('notification-status').textContent = 'Not supported';
+        document.getElementById('notification-status').textContent = 'Native ✓';
+        return;
+      }
+      
+      if (!('Notification' in window)) {
+        log('Notifications not supported in this browser');
+        notificationBanner.classList.add('hidden');
+        document.getElementById('notification-status').textContent = 'Use app';
         return;
       }
       
@@ -640,8 +654,19 @@
     function requestNotificationPermission() {
       log('Requesting notification permission...');
       
+      // Check if running in Android WebView - use native notifications
+      if (typeof Android !== 'undefined' && Android.showNotification) {
+        log('Android WebView detected - using native notifications');
+        notificationsEnabled = true;
+        notificationBanner.classList.add('hidden');
+        document.getElementById('notification-status').textContent = 'Native ✓';
+        showToast('Native notifications enabled!');
+        Android.showNotification('WOR Remote', 'Notifications are now enabled! 🎉');
+        return;
+      }
+      
       if (!('Notification' in window)) {
-        showToast('Notifications not supported');
+        showToast('Use the native Android app for notifications');
         return;
       }
       
@@ -873,7 +898,7 @@
       log('Subscribed to session');
     }
     
-    // Status heartbeat - polls status every 5 seconds as backup
+    // Status heartbeat - polls status every 3 seconds as backup
     let statusHeartbeatInterval = null;
     
     function startStatusHeartbeat() {
@@ -898,12 +923,23 @@
               log('Heartbeat detected status change: ' + currentStatus + ' -> ' + newStatus);
               currentStatus = newStatus;
               updateStatusUI();
+              
+              // Also check if we should clear approval UI
+              if (newStatus === 'monitoring' || newStatus === 'stopped') {
+                // Clear any lingering approval UI
+                if (currentApproval) {
+                  log('Heartbeat: clearing approval UI since status is ' + newStatus);
+                  currentApproval = null;
+                  approvalSection.classList.add('hidden');
+                  approvalSection.innerHTML = '';
+                }
+              }
             }
           }
         } catch (err) {
           // Silent fail for heartbeat
         }
-      }, 5000); // Every 5 seconds
+      }, 3000); // Every 3 seconds
     }
     
     function stopStatusHeartbeat() {
@@ -927,6 +963,15 @@
       const status = statusMap[currentStatus] || statusMap.disconnected;
       statusBadge.textContent = status.text;
       statusBadge.className = 'status-badge ' + status.class;
+      
+      // Clear working offer when back to monitoring or stopped
+      if (currentStatus === 'monitoring' || currentStatus === 'stopped' || currentStatus === 'paused') {
+        if (workingOfferId) {
+          log('Task completed - clearing workingOfferId');
+          workingOfferId = null;
+          renderPendingQueue(); // Re-render to enable buttons
+        }
+      }
       
       // Update buttons
       const btnRun = document.getElementById('btn-run');
@@ -953,19 +998,23 @@
         return;
       }
       
-      pendingList.innerHTML = pendingQueue.map(offer => `
-        <div class="queue-item">
+      pendingList.innerHTML = pendingQueue.map(offer => {
+        const isWorking = workingOfferId === offer.id;
+        const isDisabled = isWorking || currentStatus === 'processing' || currentStatus === 'awaiting_approval' || currentApproval;
+        
+        return `
+        <div class="queue-item${isWorking ? ' working' : ''}">
           <div class="queue-item-header">
-            <span class="queue-item-title">${offer.summary || 'Offer'}</span>
+            <span class="queue-item-title">${offer.summary || 'Offer'}${isWorking ? ' 🔄' : ''}</span>
             <span class="queue-item-time">${formatTime(offer.addedAt || offer.timestamp)}</span>
           </div>
           <div class="queue-item-preview">${(offer.text || '').substring(0, 100)}...</div>
           <div class="queue-item-actions">
-            <button class="btn btn-secondary" onclick="skipOffer('${offer.id}')">Skip</button>
-            <button class="btn btn-primary" onclick="workOffer('${offer.id}')">Work</button>
+            <button class="btn btn-secondary" onclick="skipOffer('${offer.id}')"${isDisabled ? ' disabled' : ''}>Skip</button>
+            <button class="btn btn-primary" onclick="workOffer('${offer.id}')"${isDisabled ? ' disabled' : ''}>${isWorking ? 'Working...' : 'Work'}</button>
           </div>
         </div>
-      `).join('');
+      `}).join('');
     }
     
     // Render completed list
@@ -1136,16 +1185,37 @@
       showToast('Command: ' + command);
     }
     
+    // Track which offer is currently being worked on
+    let workingOfferId = null;
+    
     function workOffer(offerId) {
       if (!sessionId) return;
+      
+      // Prevent double-click or clicking while already working
+      if (workingOfferId === offerId) {
+        log('Already working on this offer: ' + offerId);
+        showToast('Already working on this offer');
+        return;
+      }
+      
+      // Prevent working on new offer if processing/approval in progress
+      if (currentStatus === 'processing' || currentStatus === 'awaiting_approval' || currentApproval) {
+        log('Cannot work - task in progress');
+        showToast('Task in progress - wait for it to complete');
+        return;
+      }
+      
       log('Work offer: ' + offerId);
+      workingOfferId = offerId;
       
       db.ref(`sessions/${sessionId}/command`).set({
         type: 'WORK_OFFER',
         offerId: offerId,
         timestamp: Date.now()
       });
+      
       showToast('Working...');
+      renderPendingQueue(); // Re-render to disable button
     }
     
     function skipOffer(offerId) {
