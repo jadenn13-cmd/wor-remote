@@ -799,7 +799,7 @@
           }
         });
         
-        // Send notification if new offers and not first load
+        // Send notification ONLY for new offers (not approvals)
         if (!isFirstLoad && newOffersFound > 0) {
           const latestOffer = newQueue[newQueue.length - 1];
           log('Sending notification for new offer');
@@ -830,7 +830,7 @@
       });
       unsubscribers.push(() => completedRef.off());
       
-      // Listen to approval requests
+      // Listen to approval requests (NO notifications - just UI update)
       const approvalRef = sessionRef.child('approvalRequest');
       approvalRef.on('value', (snapshot) => {
         const newApproval = snapshot.val();
@@ -844,17 +844,7 @@
           return;
         }
         
-        // Notify if new approval (not first load)
-        if (!isFirstLoad && (!currentApproval || currentApproval.timestamp !== newApproval.timestamp)) {
-          const typeMap = {
-            'confirm_send': '📨 Confirm Send',
-            'exclusions': '🚫 Set Exclusions',
-            'revision': '✏️ Review Message',
-            'label_selection': '🏷️ Select Labels'
-          };
-          sendNotification('Action Required', typeMap[newApproval.type] || 'Approval needed');
-        }
-        
+        // NO notification for approvals - just update UI
         currentApproval = newApproval;
         renderApproval();
       });
@@ -876,8 +866,51 @@
       sessionRef.child('remoteConnected').set(true);
       sessionRef.child('remoteConnected').onDisconnect().set(false);
       
+      // Start status heartbeat polling (backup in case realtime listener misses updates)
+      startStatusHeartbeat();
+      
       showToast('Connected!');
       log('Subscribed to session');
+    }
+    
+    // Status heartbeat - polls status every 5 seconds as backup
+    let statusHeartbeatInterval = null;
+    
+    function startStatusHeartbeat() {
+      stopStatusHeartbeat();
+      
+      statusHeartbeatInterval = setInterval(async () => {
+        if (!sessionId) return;
+        
+        try {
+          const response = await fetch(`https://wor-remote-default-rtdb.europe-west1.firebasedatabase.app/sessions/${sessionId}/status.json`);
+          const data = await response.json();
+          
+          if (data) {
+            let newStatus;
+            if (typeof data === 'object' && data.status) {
+              newStatus = data.status;
+            } else if (typeof data === 'string') {
+              newStatus = data;
+            }
+            
+            if (newStatus && newStatus !== currentStatus) {
+              log('Heartbeat detected status change: ' + currentStatus + ' -> ' + newStatus);
+              currentStatus = newStatus;
+              updateStatusUI();
+            }
+          }
+        } catch (err) {
+          // Silent fail for heartbeat
+        }
+      }, 5000); // Every 5 seconds
+    }
+    
+    function stopStatusHeartbeat() {
+      if (statusHeartbeatInterval) {
+        clearInterval(statusHeartbeatInterval);
+        statusHeartbeatInterval = null;
+      }
     }
     
     // Update status UI
