@@ -910,15 +910,16 @@
         if (!sessionId) return;
         
         try {
-          const response = await fetch(`https://wor-remote-default-rtdb.europe-west1.firebasedatabase.app/sessions/${sessionId}/status.json`);
-          const data = await response.json();
+          // Fetch both status and lastUpdate for better sync detection
+          const response = await fetch(`https://wor-remote-default-rtdb.europe-west1.firebasedatabase.app/sessions/${sessionId}.json?shallow=false`);
+          const session = await response.json();
           
-          if (data) {
+          if (session && session.status) {
             let newStatus;
-            if (typeof data === 'object' && data.status) {
-              newStatus = data.status;
-            } else if (typeof data === 'string') {
-              newStatus = data;
+            if (typeof session.status === 'object' && session.status.status) {
+              newStatus = session.status.status;
+            } else if (typeof session.status === 'string') {
+              newStatus = session.status;
             }
             
             if (newStatus && newStatus !== currentStatus) {
@@ -926,14 +927,18 @@
               currentStatus = newStatus;
               updateStatusUI();
               
-              // Also check if we should clear approval UI
-              if (newStatus === 'monitoring' || newStatus === 'stopped') {
-                // Clear any lingering approval UI
+              // Clear approval UI and working state when back to monitoring/stopped
+              if (newStatus === 'monitoring' || newStatus === 'stopped' || newStatus === 'paused') {
                 if (currentApproval) {
-                  log('Heartbeat: clearing approval UI since status is ' + newStatus);
+                  log('Heartbeat: clearing approval UI');
                   currentApproval = null;
                   approvalSection.classList.add('hidden');
                   approvalSection.innerHTML = '';
+                }
+                if (workingOfferId) {
+                  log('Heartbeat: clearing workingOfferId');
+                  workingOfferId = null;
+                  renderPendingQueue();
                 }
               }
             }
@@ -941,7 +946,7 @@
         } catch (err) {
           // Silent fail for heartbeat
         }
-      }, 3000); // Every 3 seconds
+      }, 2000); // Every 2 seconds for faster sync
     }
     
     function stopStatusHeartbeat() {
@@ -1152,14 +1157,16 @@
         `;
       } else if (type === 'label_selection') {
         const labels = currentApproval.labels || [];
+        const noneSelected = currentApproval.noneSelectedByDefault || false;
         html = `
           <div class="approval-card">
             <div class="approval-header">
               <span class="approval-type">🏷️ Select Labels</span>
+              ${noneSelected ? '<div style="font-size:11px;color:#f7c32e;margin-top:4px;">⚠️ No auto-match - please select manually</div>' : ''}
             </div>
             <div class="label-list" id="label-list">
               ${labels.map((l, i) => `
-                <div class="label-chip selected" data-index="${i}" onclick="toggleLabel(this)">
+                <div class="label-chip${noneSelected ? '' : ' selected'}" data-index="${i}" onclick="toggleLabel(this)">
                   ${l.name || l} <span class="price-badge ${l.removePrice ? 'remove' : 'keep'}">${l.removePrice ? '-$' : '+$'}</span>
                 </div>
               `).join('')}
@@ -1221,18 +1228,57 @@
       showToast('Response sent!');
     }
     
-    function sendCommand(command) {
+    // Send command with acknowledgment waiting
+    async function sendCommand(command) {
       if (!sessionId) return;
       log('Sending command: ' + command);
       
-      db.ref(`sessions/${sessionId}/command`).set({
+      const cmdTimestamp = Date.now();
+      
+      await db.ref(`sessions/${sessionId}/command`).set({
         type: command,
-        timestamp: Date.now()
+        timestamp: cmdTimestamp
       });
-      showToast('Command: ' + command);
+      
+      showToast('Sending ' + command + '...');
+      
+      // Wait for acknowledgment (max 5 seconds)
+      const ackReceived = await waitForAck(command, cmdTimestamp, 5000);
+      
+      if (ackReceived) {
+        showToast(command + ' executed!');
+        // Force refresh status after command
+        setTimeout(refreshStatus, 500);
+      } else {
+        showToast(command + ' sent (no ack)');
+      }
     }
     
-    function workOffer(offerId) {
+    // Wait for command acknowledgment
+    async function waitForAck(command, timestamp, timeout) {
+      const startTime = Date.now();
+      
+      while (Date.now() - startTime < timeout) {
+        try {
+          const response = await fetch(`https://wor-remote-default-rtdb.europe-west1.firebasedatabase.app/sessions/${sessionId}/commandAck.json`);
+          const ack = await response.json();
+          
+          if (ack && ack.command === command && ack.timestamp > timestamp - 1000) {
+            log('Got ack for ' + command + ': ' + ack.status);
+            return true;
+          }
+        } catch (err) {
+          // Ignore errors
+        }
+        
+        await new Promise(r => setTimeout(r, 300));
+      }
+      
+      log('No ack received for ' + command);
+      return false;
+    }
+    
+    async function workOffer(offerId) {
       if (!sessionId) return;
       
       // Prevent double-click on same offer
@@ -1243,22 +1289,43 @@
       }
       
       // If clicking a different offer while one is working, clear the old one
-      // (user might want to switch or the old task finished but UI didn't update)
       if (workingOfferId && workingOfferId !== offerId) {
         log('Switching from offer ' + workingOfferId + ' to ' + offerId);
       }
       
       log('Work offer: ' + offerId);
       workingOfferId = offerId;
+      renderPendingQueue(); // Update UI immediately
       
-      db.ref(`sessions/${sessionId}/command`).set({
+      const cmdTimestamp = Date.now();
+      
+      await db.ref(`sessions/${sessionId}/command`).set({
         type: 'WORK_OFFER',
         offerId: offerId,
-        timestamp: Date.now()
+        timestamp: cmdTimestamp
       });
       
       showToast('Working...');
-      renderPendingQueue(); // Re-render to show working state
+      
+      // Wait for acknowledgment (max 5 seconds)
+      const ackReceived = await waitForAck('WORK_OFFER', cmdTimestamp, 5000);
+      
+      if (!ackReceived) {
+        log('No ack - retrying WORK_OFFER');
+        showToast('Retrying...');
+        
+        // Retry once
+        await db.ref(`sessions/${sessionId}/command`).set({
+          type: 'WORK_OFFER',
+          offerId: offerId,
+          timestamp: Date.now()
+        });
+        
+        await waitForAck('WORK_OFFER', Date.now(), 3000);
+      }
+      
+      // Force refresh status
+      setTimeout(refreshStatus, 1000);
     }
     
     function skipOffer(offerId) {
