@@ -599,6 +599,7 @@
     let notificationsEnabled = false;
     let isFirstLoad = true;
     let lastPendingCount = 0;
+    let workingOfferId = null;  // Track which offer is currently being worked on
     
     // DOM elements
     const connectionScreen = document.getElementById('connection-screen');
@@ -1184,9 +1185,6 @@
       });
       showToast('Command: ' + command);
     }
-    
-    // Track which offer is currently being worked on
-    let workingOfferId = null;
     
     function workOffer(offerId) {
       if (!sessionId) return;
