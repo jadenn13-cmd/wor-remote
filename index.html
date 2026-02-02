@@ -469,7 +469,8 @@
       <div class="header-row">
         <h1>📱 WOR Remote</h1>
         <div style="display:flex;align-items:center;gap:8px;">
-          <span class="status-badge" id="status-badge">Connecting...</span>
+          <span class="status-badge" id="status-badge" onclick="refreshStatus()" style="cursor:pointer;">Connecting...</span>
+          <button onclick="refreshStatus()" style="background:none;border:none;font-size:14px;cursor:pointer;" title="Refresh Status">🔄</button>
           <button onclick="showSettings()" style="background:none;border:none;font-size:18px;cursor:pointer;">⚙️</button>
         </div>
       </div>
@@ -950,6 +951,50 @@
       }
     }
     
+    // Manual refresh status - force fetch from Firebase
+    async function refreshStatus() {
+      if (!sessionId) {
+        showToast('Not connected');
+        return;
+      }
+      
+      log('Manual status refresh...');
+      showToast('Refreshing...');
+      
+      try {
+        const response = await fetch(`https://wor-remote-default-rtdb.europe-west1.firebasedatabase.app/sessions/${sessionId}/status.json`);
+        const data = await response.json();
+        
+        if (data) {
+          let newStatus;
+          if (typeof data === 'object' && data.status) {
+            newStatus = data.status;
+          } else if (typeof data === 'string') {
+            newStatus = data;
+          }
+          
+          if (newStatus) {
+            log('Refreshed status: ' + newStatus);
+            currentStatus = newStatus;
+            updateStatusUI();
+            
+            // Clear approval if back to monitoring
+            if (newStatus === 'monitoring' || newStatus === 'stopped') {
+              currentApproval = null;
+              approvalSection.classList.add('hidden');
+              workingOfferId = null;
+              renderPendingQueue();
+            }
+            
+            showToast('Status: ' + newStatus);
+          }
+        }
+      } catch (err) {
+        log('Refresh error: ' + err.message);
+        showToast('Refresh failed');
+      }
+    }
+    
     // Update status UI
     function updateStatusUI() {
       const statusMap = {
@@ -1001,7 +1046,8 @@
       
       pendingList.innerHTML = pendingQueue.map(offer => {
         const isWorking = workingOfferId === offer.id;
-        const isDisabled = isWorking || currentStatus === 'processing' || currentStatus === 'awaiting_approval' || currentApproval;
+        // Only disable the specific offer being worked on - don't rely on status
+        const isDisabled = isWorking;
         
         return `
         <div class="queue-item${isWorking ? ' working' : ''}">
@@ -1189,18 +1235,17 @@
     function workOffer(offerId) {
       if (!sessionId) return;
       
-      // Prevent double-click or clicking while already working
+      // Prevent double-click on same offer
       if (workingOfferId === offerId) {
         log('Already working on this offer: ' + offerId);
         showToast('Already working on this offer');
         return;
       }
       
-      // Prevent working on new offer if processing/approval in progress
-      if (currentStatus === 'processing' || currentStatus === 'awaiting_approval' || currentApproval) {
-        log('Cannot work - task in progress');
-        showToast('Task in progress - wait for it to complete');
-        return;
+      // If clicking a different offer while one is working, clear the old one
+      // (user might want to switch or the old task finished but UI didn't update)
+      if (workingOfferId && workingOfferId !== offerId) {
+        log('Switching from offer ' + workingOfferId + ' to ' + offerId);
       }
       
       log('Work offer: ' + offerId);
@@ -1213,7 +1258,7 @@
       });
       
       showToast('Working...');
-      renderPendingQueue(); // Re-render to disable button
+      renderPendingQueue(); // Re-render to show working state
     }
     
     function skipOffer(offerId) {
