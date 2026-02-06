@@ -806,6 +806,19 @@
       });
       unsubscribers.push(() => statusRef.off());
       
+      // Listen to workingOfferId (which offer extension is working on)
+      const workingRef = sessionRef.child('workingOfferId');
+      workingRef.on('value', (snapshot) => {
+        const newWorkingId = snapshot.val();
+        log('WorkingOfferId update: ' + newWorkingId);
+        
+        if (workingOfferId !== newWorkingId) {
+          workingOfferId = newWorkingId;
+          renderPendingQueue();  // Re-render to gray out the offer
+        }
+      });
+      unsubscribers.push(() => workingRef.off());
+      
       // Listen to pending queue
       const pendingRef = sessionRef.child('pendingQueue');
       pendingRef.on('value', (snapshot) => {
@@ -922,6 +935,14 @@
               newStatus = session.status;
             }
             
+            // Also get workingOfferId from session
+            const newWorkingId = session.workingOfferId || null;
+            if (newWorkingId !== workingOfferId) {
+              log('Heartbeat: workingOfferId changed: ' + workingOfferId + ' -> ' + newWorkingId);
+              workingOfferId = newWorkingId;
+              renderPendingQueue();
+            }
+            
             if (newStatus && newStatus !== currentStatus) {
               log('Heartbeat detected status change: ' + currentStatus + ' -> ' + newStatus);
               currentStatus = newStatus;
@@ -935,11 +956,7 @@
                   approvalSection.classList.add('hidden');
                   approvalSection.innerHTML = '';
                 }
-                if (workingOfferId) {
-                  log('Heartbeat: clearing workingOfferId');
-                  workingOfferId = null;
-                  renderPendingQueue();
-                }
+                // Note: workingOfferId is now synced from Firebase, so don't force clear it
               }
             }
           }
@@ -1278,6 +1295,39 @@
       return false;
     }
     
+    // Send a wake-up ping to ensure extension is listening
+    async function wakeUpExtension() {
+      if (!sessionId) return false;
+      
+      try {
+        // Send a heartbeat ping
+        const pingTimestamp = Date.now();
+        await db.ref(`sessions/${sessionId}/ping`).set({
+          timestamp: pingTimestamp,
+          from: 'app'
+        });
+        
+        // Wait briefly for extension to respond
+        await new Promise(r => setTimeout(r, 200));
+        
+        // Check if extension updated lastUpdate recently
+        const response = await fetch(`https://wor-remote-default-rtdb.europe-west1.firebasedatabase.app/sessions/${sessionId}/lastUpdate.json`);
+        const lastUpdate = await response.json();
+        
+        // If lastUpdate is recent (within 10 seconds), extension is alive
+        if (lastUpdate && Date.now() - lastUpdate < 10000) {
+          return true;
+        }
+        
+        // Try again with a longer wait
+        await new Promise(r => setTimeout(r, 500));
+        return true; // Assume it's working
+      } catch (err) {
+        log('Wake-up error: ' + err.message);
+        return true; // Continue anyway
+      }
+    }
+    
     async function workOffer(offerId) {
       if (!sessionId) return;
       
@@ -1296,32 +1346,47 @@
       log('Work offer: ' + offerId);
       workingOfferId = offerId;
       renderPendingQueue(); // Update UI immediately
+      showToast('Connecting...');
       
-      const cmdTimestamp = Date.now();
+      // Wake up extension first
+      await wakeUpExtension();
       
-      await db.ref(`sessions/${sessionId}/command`).set({
-        type: 'WORK_OFFER',
-        offerId: offerId,
-        timestamp: cmdTimestamp
-      });
+      // Send command with retry logic
+      let attempts = 0;
+      let ackReceived = false;
       
-      showToast('Working...');
-      
-      // Wait for acknowledgment (max 5 seconds)
-      const ackReceived = await waitForAck('WORK_OFFER', cmdTimestamp, 5000);
-      
-      if (!ackReceived) {
-        log('No ack - retrying WORK_OFFER');
-        showToast('Retrying...');
+      while (attempts < 3 && !ackReceived) {
+        attempts++;
+        const cmdTimestamp = Date.now();
         
-        // Retry once
+        log('Work attempt ' + attempts + ' for ' + offerId);
+        
         await db.ref(`sessions/${sessionId}/command`).set({
           type: 'WORK_OFFER',
           offerId: offerId,
-          timestamp: Date.now()
+          timestamp: cmdTimestamp
         });
         
-        await waitForAck('WORK_OFFER', Date.now(), 3000);
+        if (attempts === 1) {
+          showToast('Working...');
+        } else {
+          showToast('Retrying (' + attempts + ')...');
+        }
+        
+        // Wait for acknowledgment
+        ackReceived = await waitForAck('WORK_OFFER', cmdTimestamp, attempts === 1 ? 4000 : 3000);
+        
+        if (!ackReceived && attempts < 3) {
+          // Brief pause before retry
+          await new Promise(r => setTimeout(r, 500));
+        }
+      }
+      
+      if (ackReceived) {
+        showToast('Working on offer!');
+      } else {
+        showToast('Command sent (no confirmation)');
+        log('No ack after ' + attempts + ' attempts');
       }
       
       // Force refresh status
