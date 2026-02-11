@@ -802,6 +802,7 @@
         }
         
         updateStatusUI();
+        renderPendingQueue();  // Re-render to update button states
         log('Status set to: ' + currentStatus);
       });
       unsubscribers.push(() => statusRef.off());
@@ -1068,10 +1069,13 @@
         return;
       }
       
+      // Disable ALL buttons when ANY task is in progress (processing or awaiting approval)
+      const isTaskInProgress = currentStatus === 'processing' || currentStatus === 'awaiting_approval' || workingOfferId !== null;
+      
       pendingList.innerHTML = pendingQueue.map(offer => {
         const isWorking = workingOfferId === offer.id;
-        // Only disable the specific offer being worked on - don't rely on status
-        const isDisabled = isWorking;
+        // Disable this offer's buttons if it's being worked OR if any task is in progress
+        const isDisabled = isWorking || isTaskInProgress;
         
         return `
         <div class="queue-item${isWorking ? ' working' : ''}">
