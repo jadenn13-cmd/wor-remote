@@ -919,36 +919,39 @@
     function startStatusHeartbeat() {
       stopStatusHeartbeat();
       
+      // Fast heartbeat - every 1 second for better responsiveness
       statusHeartbeatInterval = setInterval(async () => {
         if (!sessionId) return;
         
         try {
-          // Fetch both status and lastUpdate for better sync detection
-          const response = await fetch(`https://wor-remote-default-rtdb.europe-west1.firebasedatabase.app/sessions/${sessionId}.json?shallow=false`);
+          // Fetch full session for complete sync
+          const response = await fetch(`https://wor-remote-default-rtdb.europe-west1.firebasedatabase.app/sessions/${sessionId}.json`);
           const session = await response.json();
           
-          if (session && session.status) {
+          if (session) {
+            // Get status
             let newStatus;
-            if (typeof session.status === 'object' && session.status.status) {
+            if (session.status && typeof session.status === 'object' && session.status.status) {
               newStatus = session.status.status;
             } else if (typeof session.status === 'string') {
               newStatus = session.status;
             }
             
-            // Also get workingOfferId from session
+            // Get workingOfferId
             const newWorkingId = session.workingOfferId || null;
             if (newWorkingId !== workingOfferId) {
-              log('Heartbeat: workingOfferId changed: ' + workingOfferId + ' -> ' + newWorkingId);
+              log('Heartbeat: workingOfferId: ' + workingOfferId + ' -> ' + newWorkingId);
               workingOfferId = newWorkingId;
               renderPendingQueue();
             }
             
+            // Update status
             if (newStatus && newStatus !== currentStatus) {
-              log('Heartbeat detected status change: ' + currentStatus + ' -> ' + newStatus);
+              log('Heartbeat: status: ' + currentStatus + ' -> ' + newStatus);
               currentStatus = newStatus;
               updateStatusUI();
               
-              // Clear approval UI and working state when back to monitoring/stopped
+              // Clear approval UI when task finishes
               if (newStatus === 'monitoring' || newStatus === 'stopped' || newStatus === 'paused') {
                 if (currentApproval) {
                   log('Heartbeat: clearing approval UI');
@@ -956,14 +959,13 @@
                   approvalSection.classList.add('hidden');
                   approvalSection.innerHTML = '';
                 }
-                // Note: workingOfferId is now synced from Firebase, so don't force clear it
               }
             }
           }
         } catch (err) {
-          // Silent fail for heartbeat
+          // Silent fail
         }
-      }, 2000); // Every 2 seconds for faster sync
+      }, 1000); // Every 1 second for faster sync
     }
     
     function stopStatusHeartbeat() {
