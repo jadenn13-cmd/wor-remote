@@ -1229,9 +1229,13 @@
       if (!sessionId) return;
       log('Sending response: ' + JSON.stringify(response));
       
+      // Include requestId from the original request for matching
+      const requestId = currentApproval ? currentApproval.requestId : null;
+      
       db.ref(`sessions/${sessionId}/approvalResponse`).set({
         response: response,
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        requestId: requestId  // Include for matching
       });
       
       // Clear approval request
